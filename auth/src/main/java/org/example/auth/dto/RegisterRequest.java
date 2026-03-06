@@ -31,7 +31,8 @@ public class RegisterRequest {
 
     private String departmentId;
 
+    private String specialization;
+
     private LocalDate hireDate;
 }
-
 

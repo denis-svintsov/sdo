@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/positions")
+@RequestMapping({"/api/positions", "/api/auth/positions"})
 @CrossOrigin(origins = "*")
 public class PositionController {
     private final PositionRepository positionRepository;
@@ -22,5 +22,4 @@ public class PositionController {
         return ResponseEntity.ok(positionRepository.findAll());
     }
 }
-
 

@@ -54,6 +54,9 @@ public class User {
     @Column(name = "hire_date")
     private LocalDate hireDate;
 
+    @Column(name = "specialization")
+    private String specialization;
+
     @Column(nullable = false)
     private String status = "active";
 
@@ -74,5 +77,4 @@ public class User {
     @OneToOne(mappedBy = "user", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private UserSettings userSettings;
 }
-
 

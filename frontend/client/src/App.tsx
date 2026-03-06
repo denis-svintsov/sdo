@@ -14,6 +14,7 @@ import Certificates from "@/pages/certificates";
 import Chat from "@/pages/chat";
 import CalendarPage from "@/pages/calendar";
 import AuthPage from "@/pages/auth";
+import CourseDetail from "@/pages/course-detail";
 
 function Router() {
   return (
@@ -55,11 +56,9 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/course/:id">
-        {(params) => (
-          <ProtectedRoute>
-            <div className="p-8">Course Details for {params.id} (Mock)</div>
-          </ProtectedRoute>
-        )}
+        <ProtectedRoute>
+          <CourseDetail />
+        </ProtectedRoute>
       </Route>
       <Route component={NotFound} />
     </Switch>

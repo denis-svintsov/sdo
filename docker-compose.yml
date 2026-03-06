@@ -18,6 +18,38 @@ services:
       retries: 5
     networks:
       - sdo-network
+      
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      CLUSTER_ID: 1
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - sdo-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: sdo-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - sdo-network
 
   frontend:
     build:
@@ -41,8 +73,6 @@ services:
       context: ./auth
       dockerfile: Dockerfile
     container_name: sdo-auth
-    ports:
-      - "8080:8080"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sdo_db
       SPRING_DATASOURCE_USERNAME: sdo_user
@@ -54,11 +84,51 @@ services:
     networks:
       - sdo-network
 
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: sdo-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      AUTH_SERVICE_URL: http://auth:8080
+      COURSES_SERVICE_URL: http://courses:8081
+      REDIS_HOST: redis
+      CORS_ALLOWED_ORIGINS: http://localhost:5000
+    depends_on:
+      auth:
+        condition: service_started
+      courses:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - sdo-network
+      
+  courses:
+    build:
+      context: ./courses
+      dockerfile: Dockerfile
+    container_name: sdo-courses
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sdo_db
+      SPRING_DATASOURCE_USERNAME: sdo_user
+      SPRING_DATASOURCE_PASSWORD: sdo_password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - sdo-network
+
 volumes:
   postgres_data:
+  kafka-data:
 
 networks:
   sdo-network:
     driver: bridge
-
-

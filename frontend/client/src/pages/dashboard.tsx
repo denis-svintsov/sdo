@@ -4,11 +4,40 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { CalendarDays, Clock, Award, ArrowRight, AlertTriangle } from "lucide-react";
-import { COURSES } from "@/lib/mock-data";
 import { Link } from "wouter";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { fetchMyCertificates, fetchMyProgress } from "@/lib/coursesApi";
+import { useMemo } from "react";
 
 export default function Dashboard() {
-  const activeCourse = COURSES[0];
+  const { user } = useAuth();
+  const { data: progressData } = useQuery({
+    queryKey: ["progress", user?.id],
+    queryFn: () => fetchMyProgress(user!.id),
+    enabled: !!user?.id,
+  });
+  const { data: certificates } = useQuery({
+    queryKey: ["certificates", user?.id],
+    queryFn: () => fetchMyCertificates(user!.id),
+    enabled: !!user?.id,
+  });
+
+  const activeCourse = useMemo(() => {
+    const courses = progressData?.courses ?? [];
+    if (courses.length === 0) return null;
+    return courses.reduce((best, current) =>
+      current.progressPercentage > best.progressPercentage ? current : best,
+    );
+  }, [progressData]);
+
+  const completedLessons = progressData?.courses?.reduce(
+    (sum, course) => sum + course.completedLessons,
+    0,
+  ) ?? 0;
+
+  const selectedCount = progressData?.courses?.length ?? 0;
+  const certificatesCount = certificates?.length ?? 0;
   
   return (
     <Layout>
@@ -28,19 +57,21 @@ export default function Dashboard() {
               <CalendarDays className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">2/3</div>
-              <p className="text-xs text-muted-foreground">Необходимо выбрать еще 1</p>
+              <div className="text-2xl font-bold">{selectedCount}/3</div>
+              <p className="text-xs text-muted-foreground">
+                {selectedCount >= 3 ? "Лимит достигнут" : `Необходимо выбрать еще ${3 - selectedCount}`}
+              </p>
             </CardContent>
           </Card>
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Часов обучения</CardTitle>
+              <CardTitle className="text-sm font-medium">Пройдено уроков</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">42</div>
-              <p className="text-xs text-muted-foreground">+12% с прошлого месяца</p>
+              <div className="text-2xl font-bold">{completedLessons}</div>
+              <p className="text-xs text-muted-foreground">Суммарно по активным курсам</p>
             </CardContent>
           </Card>
           
@@ -50,7 +81,7 @@ export default function Dashboard() {
               <Award className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">12</div>
+              <div className="text-2xl font-bold">{certificatesCount}</div>
               <p className="text-xs text-muted-foreground">Всего получено</p>
             </CardContent>
           </Card>
@@ -111,33 +142,38 @@ export default function Dashboard() {
               <CardDescription>До начала осталось 5 дней</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="aspect-video w-full overflow-hidden rounded-md">
-                <img 
-                  src={activeCourse.image} 
-                  alt={activeCourse.title}
-                  className="h-full w-full object-cover transition-transform hover:scale-105"
-                />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <Badge variant="secondary">{activeCourse.provider}</Badge>
-                  <span className="text-sm text-muted-foreground">Онлайн</span>
+              {!activeCourse && (
+                <div className="rounded-lg border p-6 text-sm text-muted-foreground">
+                  Нет активных курсов в прогрессе.
                 </div>
-                <h3 className="font-bold text-lg leading-tight mb-2">{activeCourse.title}</h3>
-                <p className="text-sm text-muted-foreground line-clamp-2">{activeCourse.description}</p>
-              </div>
-              <div className="pt-2">
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span>Прогресс подготовки</span>
-                  <span className="font-medium">80%</span>
-                </div>
-                <Progress value={80} className="h-2" />
-              </div>
-              <Button className="w-full mt-4" asChild>
-                <Link href={`/course/${activeCourse.id}`}>
-                  Перейти к материалам <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
+              )}
+              {activeCourse && (
+                <>
+                  <div className="aspect-video w-full overflow-hidden rounded-md bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200" />
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <Badge variant="secondary">Активный курс</Badge>
+                      <span className="text-sm text-muted-foreground">В процессе</span>
+                    </div>
+                    <h3 className="font-bold text-lg leading-tight mb-2">{activeCourse.courseTitle}</h3>
+                    <p className="text-sm text-muted-foreground line-clamp-2">
+                      Прогресс по курсу: {activeCourse.progressPercentage}%
+                    </p>
+                  </div>
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span>Прогресс подготовки</span>
+                      <span className="font-medium">{activeCourse.progressPercentage}%</span>
+                    </div>
+                    <Progress value={activeCourse.progressPercentage} className="h-2" />
+                  </div>
+                  <Button className="w-full mt-4" asChild>
+                    <Link href={`/course/${activeCourse.courseId}`}>
+                      Перейти к материалам <ArrowRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </div>

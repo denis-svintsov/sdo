@@ -49,14 +49,17 @@ export default function AuthPage() {
   const [regPositionId, setRegPositionId] = useState("");
   const [regDepartmentId, setRegDepartmentId] = useState("");
   const [regHireDate, setRegHireDate] = useState("");
+  const [regSpecialization, setRegSpecialization] = useState("");
+  const authBaseUrl =
+    import.meta.env.VITE_AUTH_API_URL ?? "http://localhost:8080/auth";
 
   useEffect(() => {
     // Загрузка departments и positions
     const loadData = async () => {
       try {
         const [deptRes, posRes] = await Promise.all([
-          fetch("http://localhost:8080/api/departments"),
-          fetch("http://localhost:8080/api/positions"),
+          fetch(`${authBaseUrl}/departments`),
+          fetch(`${authBaseUrl}/positions`),
         ]);
 
         if (deptRes.ok) {
@@ -112,6 +115,7 @@ export default function AuthPage() {
         lastName: regLastName,
         positionId: regPositionId || undefined,
         departmentId: regDepartmentId || undefined,
+        specialization: regSpecialization || undefined,
         hireDate: regHireDate || undefined,
       });
       toast({
@@ -260,6 +264,23 @@ export default function AuthPage() {
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="specialization">Специализация</Label>
+                    <Select
+                      value={regSpecialization}
+                      onValueChange={setRegSpecialization}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Выберите специализацию" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Software Engineering">Разработка ПО</SelectItem>
+                        <SelectItem value="Project Management">Управление проектами</SelectItem>
+                        <SelectItem value="Data Analytics">Аналитика данных</SelectItem>
+                        <SelectItem value="Information Security">Информационная безопасность</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="department">Департамент</Label>

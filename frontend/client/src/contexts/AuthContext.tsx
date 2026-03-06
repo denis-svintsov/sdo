@@ -2,8 +2,10 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 import { useLocation } from "wouter";
 
 interface User {
+  id: string;
   username: string;
   email: string;
+  specialization?: string | null;
   roles: string[];
 }
 
@@ -12,6 +14,7 @@ interface AuthContextType {
   token: string | null;
   login: (username: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
+  updateSpecialization: (specialization: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -25,12 +28,13 @@ interface RegisterData {
   lastName: string;
   positionId?: string;
   departmentId?: string;
+  specialization?: string;
   hireDate?: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_API_URL = "http://localhost:8080/api/auth";
+const AUTH_API_URL = import.meta.env.VITE_AUTH_API_URL ?? "http://localhost:8080/auth";
 const TOKEN_KEY = "auth_token";
 const USER_KEY = "auth_user";
 
@@ -48,7 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (savedToken && savedUser) {
       setToken(savedToken);
       try {
-        setUser(JSON.parse(savedUser));
+        const parsed = JSON.parse(savedUser);
+        if (!parsed?.id) {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(USER_KEY);
+        } else {
+          setUser(parsed);
+        }
       } catch (e) {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(USER_KEY);
@@ -80,8 +90,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       const userData: User = {
+        id: data.userId,
         username: data.username,
         email: data.email,
+        specialization: data.specialization ?? null,
         roles: data.roles || [],
       };
 
@@ -124,8 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const responseData = await response.json();
       const userData: User = {
+        id: responseData.userId,
         username: responseData.username,
         email: responseData.email,
+        specialization: responseData.specialization ?? null,
         roles: responseData.roles || [],
       };
 
@@ -162,6 +176,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocation("/auth");
   };
 
+  const updateSpecialization = async (specialization: string) => {
+    if (!token) {
+      throw new Error("Пользователь не авторизован");
+    }
+    const response = await fetch(`${AUTH_API_URL}/me/specialization`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ specialization }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || "Ошибка обновления специализации");
+    }
+    const updated = await response.json();
+    const currentUser = user;
+    if (!currentUser) return;
+    const nextUser: User = {
+      ...currentUser,
+      specialization: updated.specialization ?? specialization,
+    };
+    setUser(nextUser);
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser));
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -169,6 +210,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         login,
         register,
+        updateSpecialization,
         logout,
         isAuthenticated: !!token && !!user,
         isLoading,
@@ -186,4 +228,3 @@ export function useAuth() {
   }
   return context;
 }
-

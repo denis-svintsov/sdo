@@ -3,10 +3,16 @@ package org.example.auth.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.example.auth.dto.AuthResponse;
+import org.example.auth.dto.AuthValidationResponse;
 import org.example.auth.dto.ErrorResponse;
 import org.example.auth.dto.LoginRequest;
 import org.example.auth.dto.RegisterRequest;
+import org.example.auth.dto.UpdateSpecializationRequest;
+import org.example.auth.repository.UserRepository;
 import org.example.auth.service.AuthService;
+import org.example.auth.service.JwtService;
+import org.example.auth.service.SessionService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -21,9 +27,19 @@ import java.util.Map;
 @CrossOrigin(origins = "*")
 public class AuthController {
     private final AuthService authService;
+    private final JwtService jwtService;
+    private final SessionService sessionService;
+    private final UserRepository userRepository;
 
-    public AuthController(AuthService authService) {
+    public AuthController(
+            AuthService authService,
+            JwtService jwtService,
+            SessionService sessionService,
+            UserRepository userRepository) {
         this.authService = authService;
+        this.jwtService = jwtService;
+        this.sessionService = sessionService;
+        this.userRepository = userRepository;
     }
 
     private String getClientIpAddress(HttpServletRequest request) {
@@ -82,6 +98,60 @@ public class AuthController {
         }
     }
 
+    @PutMapping("/me/specialization")
+    public ResponseEntity<?> updateMySpecialization(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @Valid @RequestBody UpdateSpecializationRequest request) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Missing or invalid Authorization header"));
+        }
+        try {
+            String token = authHeader.substring(7);
+            String username = jwtService.extractUsername(token);
+            if (!jwtService.validateToken(token, username) || !sessionService.isSessionValid(token)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Token is invalid or expired"));
+            }
+            AuthResponse updated = authService.updateSpecializationByUsername(username, request.specialization());
+            return ResponseEntity.ok(updated);
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Unable to update specialization"));
+        }
+    }
+
+    @GetMapping("/validate")
+    public ResponseEntity<?> validate(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Missing or invalid Authorization header"));
+        }
+
+        String token = authHeader.substring(7);
+        try {
+            String username = jwtService.extractUsername(token);
+            boolean tokenValid = jwtService.validateToken(token, username);
+            boolean sessionValid = sessionService.isSessionValid(token);
+
+            if (!tokenValid || !sessionValid) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Token is invalid or expired"));
+            }
+
+            var user = userRepository.findByUsername(username).orElse(null);
+            if (user == null) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "User not found"));
+            }
+            var roles = user.getRoles().stream().map(Enum::name).toList();
+            return ResponseEntity.ok(new AuthValidationResponse(user.getId(), user.getUsername(), roles));
+        } catch (Exception ex) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Token validation failed"));
+        }
+    }
+
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("Auth service is running");
@@ -98,4 +168,3 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errors);
     }
 }
-

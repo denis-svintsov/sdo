@@ -1,0 +1,28 @@
+package org.example.courses.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import org.example.courses.model.CourseStatus;
+import org.example.courses.model.DifficultyLevel;
+
+import java.math.BigDecimal;
+import java.util.Set;
+
+public record UpdateCourseRequest(
+        @NotBlank String title,
+        String description,
+        String categoryId,
+        @NotNull DifficultyLevel difficulty,
+        @PositiveOrZero Integer durationMinutes,
+        @NotNull CourseStatus status,
+        Set<String> tagIds,
+        Set<String> allowedRoles,
+        Set<String> allowedDepartmentIds,
+        String specialization,
+        String instructions,
+        String aggregatorUrl,
+        String coverUrl,
+        @PositiveOrZero BigDecimal companyCost
+) {
+}

@@ -3,8 +3,87 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Upload, Search, FileText, Calendar } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { downloadCertificate, fetchCourse, fetchMyCertificates } from "@/lib/coursesApi";
+import { useEffect, useMemo, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Certificates() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const [courseTitles, setCourseTitles] = useState<Record<string, string>>({});
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["certificates", user?.id],
+    queryFn: () => fetchMyCertificates(user!.id),
+    enabled: !!user?.id,
+  });
+
+  const certificates = data ?? [];
+
+  useEffect(() => {
+    let active = true;
+    const loadTitles = async () => {
+      const missing = certificates
+        .map((c) => c.courseId)
+        .filter((id) => id && !courseTitles[id]);
+      if (missing.length === 0) return;
+      const entries = await Promise.all(
+        missing.map(async (id) => {
+          try {
+            const course = await fetchCourse(id);
+            return [id, course.title] as const;
+          } catch {
+            return [id, "Курс"] as const;
+          }
+        }),
+      );
+      if (!active) return;
+      setCourseTitles((prev) => {
+        const next = { ...prev };
+        entries.forEach(([id, title]) => {
+          next[id] = title;
+        });
+        return next;
+      });
+    };
+    loadTitles();
+    return () => {
+      active = false;
+    };
+  }, [certificates, courseTitles]);
+
+  const handleDownload = async (id: string) => {
+    if (!user?.id) return;
+    try {
+      const blob = await downloadCertificate(id, user.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `certificate-${id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({
+        title: "Ошибка скачивания",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const formattedCertificates = useMemo(
+    () =>
+      certificates.map((cert) => ({
+        ...cert,
+        title: courseTitles[cert.courseId] ?? cert.courseId,
+        issueDate: cert.issueDate ? new Date(cert.issueDate) : null,
+      })),
+    [certificates, courseTitles],
+  );
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -30,43 +109,46 @@ export default function Certificates() {
         </div>
 
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Mock Certificate 1 */}
-            <Card className="group overflow-hidden transition-all hover:shadow-lg">
-                <div className="aspect-[4/3] bg-muted relative flex items-center justify-center p-8 bg-slate-100">
-                    <FileText className="h-16 w-16 text-slate-300" />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+          {isLoading && (
+            <div className="col-span-full rounded-lg border p-6 text-center text-sm text-muted-foreground">
+              Загрузка сертификатов...
+            </div>
+          )}
+          {isError && (
+            <div className="col-span-full rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">
+              Не удалось загрузить сертификаты. {(error as Error).message}
+            </div>
+          )}
+          {!isLoading && !isError && formattedCertificates.length === 0 && (
+            <div className="col-span-full rounded-lg border p-6 text-center text-sm text-muted-foreground">
+              Сертификаты пока отсутствуют.
+            </div>
+          )}
+          {formattedCertificates.map((cert) => (
+            <Card key={cert.id} className="group overflow-hidden transition-all hover:shadow-lg">
+              <div className="aspect-[4/3] bg-muted relative flex items-center justify-center p-8 bg-slate-100">
+                <FileText className="h-16 w-16 text-slate-300" />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+              </div>
+              <CardContent className="p-4">
+                <h3 className="font-semibold line-clamp-1">{cert.title}</h3>
+                <p className="text-sm text-muted-foreground">ID курса: {cert.courseId}</p>
+                <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {cert.issueDate ? cert.issueDate.toLocaleDateString("ru-RU") : "—"}
+                  </span>
                 </div>
-                <CardContent className="p-4">
-                    <h3 className="font-semibold line-clamp-1">Основы Python</h3>
-                    <p className="text-sm text-muted-foreground">Stepik</p>
-                    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" /> 12.05.2023
-                        </span>
-                        <span>72 ч.</span>
-                    </div>
-                    <Button variant="outline" className="w-full mt-4 h-8 text-xs">Скачать PDF</Button>
-                </CardContent>
+                <Button
+                  variant="outline"
+                  className="w-full mt-4 h-8 text-xs"
+                  onClick={() => handleDownload(cert.id)}
+                >
+                  Скачать PDF
+                </Button>
+              </CardContent>
             </Card>
-
-            {/* Mock Certificate 2 */}
-            <Card className="group overflow-hidden transition-all hover:shadow-lg">
-                <div className="aspect-[4/3] bg-muted relative flex items-center justify-center p-8 bg-slate-100">
-                     <FileText className="h-16 w-16 text-slate-300" />
-                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
-                </div>
-                <CardContent className="p-4">
-                    <h3 className="font-semibold line-clamp-1">Agile Management</h3>
-                    <p className="text-sm text-muted-foreground">Coursera</p>
-                    <div className="mt-4 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" /> 20.08.2023
-                        </span>
-                         <span>40 ч.</span>
-                    </div>
-                     <Button variant="outline" className="w-full mt-4 h-8 text-xs">Скачать PDF</Button>
-                </CardContent>
-            </Card>
+          ))}
         </div>
       </div>
     </Layout>

@@ -66,6 +66,7 @@ public class AuthService {
         user.setLastName(request.getLastName());
         user.setPositionId(request.getPositionId());
         user.setDepartmentId(request.getDepartmentId());
+        user.setSpecialization(request.getSpecialization());
         user.setHireDate(request.getHireDate());
         user.setStatus("active");
         
@@ -87,7 +88,7 @@ public class AuthService {
         // Запись успешной попытки регистрации
         loginAttemptService.recordLoginAttempt(user.getId(), user.getEmail(), ipAddress, true);
 
-        return new AuthResponse(token, "Bearer", user.getUsername(), user.getEmail(), roleNames);
+        return new AuthResponse(user.getId(), token, "Bearer", user.getUsername(), user.getEmail(), user.getSpecialization(), roleNames);
     }
 
     @Transactional
@@ -143,13 +144,25 @@ public class AuthService {
         // Создание сессии
         sessionService.createSession(user.getId(), token, ipAddress, userAgent);
 
-        return new AuthResponse(token, "Bearer", user.getUsername(), user.getEmail(), roleNames);
+        return new AuthResponse(user.getId(), token, "Bearer", user.getUsername(), user.getEmail(), user.getSpecialization(), roleNames);
     }
 
     @Transactional
     public void logout(String token) {
         sessionService.invalidateSessionByToken(token);
     }
+
+    @Transactional
+    public AuthResponse updateSpecializationByUsername(String username, String specialization) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setSpecialization(specialization);
+        user = userRepository.save(user);
+        Set<String> roleNames = user.getRoles().stream()
+                .map(Enum::name)
+                .collect(Collectors.toSet());
+
+        // token не перевыпускаем, возвращаем текущую структуру профиля
+        return new AuthResponse(user.getId(), null, "Bearer", user.getUsername(), user.getEmail(), user.getSpecialization(), roleNames);
+    }
 }
-
-

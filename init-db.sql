@@ -4,6 +4,7 @@
 -- Создание схем
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE SCHEMA IF NOT EXISTS users;
+CREATE SCHEMA IF NOT EXISTS courses;
 
 -- ============================================
 -- СХЕМА USERS
@@ -41,6 +42,7 @@ ALTER TABLE users.users ADD COLUMN IF NOT EXISTS first_name VARCHAR(255);
 ALTER TABLE users.users ADD COLUMN IF NOT EXISTS last_name VARCHAR(255);
 ALTER TABLE users.users ADD COLUMN IF NOT EXISTS position_id VARCHAR(36);
 ALTER TABLE users.users ADD COLUMN IF NOT EXISTS department_id VARCHAR(36);
+ALTER TABLE users.users ADD COLUMN IF NOT EXISTS specialization VARCHAR(255);
 ALTER TABLE users.users ADD COLUMN IF NOT EXISTS hire_date DATE;
 ALTER TABLE users.users ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'active';
 ALTER TABLE users.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
@@ -178,3 +180,173 @@ BEGIN
     DELETE FROM auth.refresh_token WHERE expires_at < CURRENT_TIMESTAMP OR revoked = true;
 END;
 $$ language 'plpgsql';
+
+-- ============================================
+-- СХЕМА COURSES
+-- ============================================
+
+-- Категории курсов
+CREATE TABLE IF NOT EXISTS courses.category (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    description TEXT
+);
+
+-- Теги
+CREATE TABLE IF NOT EXISTS courses.tag (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
+
+-- Курсы
+CREATE TABLE IF NOT EXISTS courses.course (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    category_id VARCHAR(36),
+    difficulty VARCHAR(50),
+    duration_minutes INTEGER,
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+    allowed_roles_csv TEXT,
+    allowed_department_ids_csv TEXT,
+    specialization VARCHAR(255),
+    instructions TEXT,
+    aggregator_url TEXT,
+    cover_url TEXT,
+    company_cost NUMERIC(12,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_course_category FOREIGN KEY (category_id) REFERENCES courses.category(id) ON DELETE SET NULL
+);
+
+-- Расширение таблицы courses.course
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS specialization VARCHAR(255);
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS instructions TEXT;
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS aggregator_url TEXT;
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS cover_url TEXT;
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS company_cost NUMERIC(12,2);
+
+-- Таблица связей курс-тег
+CREATE TABLE IF NOT EXISTS courses.course_tag (
+    course_id VARCHAR(36) NOT NULL,
+    tag_id VARCHAR(36) NOT NULL,
+    PRIMARY KEY (course_id, tag_id),
+    CONSTRAINT fk_course_tag_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE,
+    CONSTRAINT fk_course_tag_tag FOREIGN KEY (tag_id) REFERENCES courses.tag(id) ON DELETE CASCADE
+);
+
+-- Учебные траектории
+CREATE TABLE IF NOT EXISTS courses.learning_path (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    target_audience VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Связь траектория-курс
+CREATE TABLE IF NOT EXISTS courses.learning_path_course (
+    learning_path_id VARCHAR(36) NOT NULL,
+    course_id VARCHAR(36) NOT NULL,
+    PRIMARY KEY (learning_path_id, course_id),
+    CONSTRAINT fk_lp_course_lp FOREIGN KEY (learning_path_id) REFERENCES courses.learning_path(id) ON DELETE CASCADE,
+    CONSTRAINT fk_lp_course_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE
+);
+
+-- Модули курса
+CREATE TABLE IF NOT EXISTS courses.module (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    course_id VARCHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    order_index INTEGER NOT NULL,
+    CONSTRAINT fk_module_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE
+);
+
+-- Уроки
+CREATE TABLE IF NOT EXISTS courses.lesson (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    module_id VARCHAR(36) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    content TEXT,
+    video_url TEXT,
+    duration_minutes INTEGER,
+    lesson_type VARCHAR(50),
+    order_index INTEGER NOT NULL,
+    CONSTRAINT fk_lesson_module FOREIGN KEY (module_id) REFERENCES courses.module(id) ON DELETE CASCADE
+);
+
+-- Назначения курсов сотрудникам
+CREATE TABLE IF NOT EXISTS courses.course_assignment (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id VARCHAR(36) NOT NULL,
+    course_id VARCHAR(36) NOT NULL,
+    assigned_by VARCHAR(36) NOT NULL,
+    due_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'ASSIGNED',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_course_assignment_user FOREIGN KEY (user_id) REFERENCES users.users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_course_assignment_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_course_assignment_user ON courses.course_assignment(user_id);
+CREATE INDEX IF NOT EXISTS idx_course_assignment_course ON courses.course_assignment(course_id);
+
+-- Прогресс по урокам
+CREATE TABLE IF NOT EXISTS courses.user_progress (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id VARCHAR(36) NOT NULL,
+    course_id VARCHAR(36) NOT NULL,
+    lesson_id VARCHAR(36) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'NOT_STARTED',
+    progress_percentage INTEGER NOT NULL DEFAULT 0,
+    time_spent_seconds BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_user_progress_user FOREIGN KEY (user_id) REFERENCES users.users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_user_progress_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE,
+    CONSTRAINT fk_user_progress_lesson FOREIGN KEY (lesson_id) REFERENCES courses.lesson(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_progress_user ON courses.user_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_progress_course ON courses.user_progress(course_id);
+
+-- Записи на курсы (enrollments)
+CREATE TABLE IF NOT EXISTS courses.enrollment (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id VARCHAR(36) NOT NULL,
+    course_id VARCHAR(36) NOT NULL,
+    enrollment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completion_date TIMESTAMP,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT fk_enrollment_user FOREIGN KEY (user_id) REFERENCES users.users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_enrollment_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_enrollment_user ON courses.enrollment(user_id);
+CREATE INDEX IF NOT EXISTS idx_enrollment_course ON courses.enrollment(course_id);
+
+-- Сертификаты
+CREATE TABLE IF NOT EXISTS courses.certificate (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id VARCHAR(36) NOT NULL,
+    course_id VARCHAR(36) NOT NULL,
+    issue_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    certificate_url TEXT NOT NULL,
+    pdf_bytes BYTEA NOT NULL,
+    hash VARCHAR(128) NOT NULL UNIQUE,
+    CONSTRAINT fk_certificate_user FOREIGN KEY (user_id) REFERENCES users.users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_certificate_course FOREIGN KEY (course_id) REFERENCES courses.course(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_certificate_user ON courses.certificate(user_id);
+
+-- История обучения
+CREATE TABLE IF NOT EXISTS courses.learning_history (
+    id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id VARCHAR(36) NOT NULL,
+    action VARCHAR(100) NOT NULL,
+    "timestamp" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    details TEXT,
+    CONSTRAINT fk_learning_history_user FOREIGN KEY (user_id) REFERENCES users.users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_learning_history_user_time ON courses.learning_history(user_id, "timestamp");

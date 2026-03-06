@@ -8,11 +8,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AuthResponse {
+    private String userId;
     private String token;
     private String type = "Bearer";
     private String username;
     private String email;
+    private String specialization;
     private java.util.Set<String> roles;
 }
-
-

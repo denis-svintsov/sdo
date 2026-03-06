@@ -17,7 +17,7 @@ export function Sidebar() {
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Дашборд", href: "/" },
-    { icon: BookOpen, label: "Каталог курсов", href: "/catalog" },
+    { icon: BookOpen, label: "Назначенные курсы", href: "/catalog" },
     { icon: CheckSquare, label: "Мой выбор", href: "/selection" },
     { icon: Calendar, label: "Расписание", href: "/calendar" },
     { icon: MessageSquare, label: "Чаты", href: "/chat" },
