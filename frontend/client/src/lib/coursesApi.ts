@@ -12,11 +12,15 @@ export interface CourseDto {
   tagIds?: string[];
   allowedRoles?: string[];
   allowedDepartmentIds?: string[];
-  specialization?: string | null;
+  specializations?: string[];
   instructions?: string | null;
   aggregatorUrl?: string | null;
   coverUrl?: string | null;
   companyCost?: number | null;
+  partnerName?: string | null;
+  partnerLocation?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 export interface Page<T> {
@@ -59,7 +63,7 @@ export interface AssignedCourseDto {
   courseCoverUrl?: string | null;
   courseAggregatorUrl?: string | null;
   courseInstructions?: string | null;
-  courseSpecialization?: string | null;
+  courseSpecializations?: string[];
   courseCompanyCost?: number | null;
   assignedBy?: string | null;
   dueDate?: string | null;
@@ -124,7 +128,7 @@ export async function updateCourseSpecialization(id: string, specialization: str
   return fetchJson<CourseDto>(buildUrl(`/courses/${id}/specialization`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ specialization }),
+    body: JSON.stringify({ specializations: [specialization] }),
   });
 }
 

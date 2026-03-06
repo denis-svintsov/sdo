@@ -71,7 +71,12 @@ public class CourseService {
         }
 
         if (specialization != null && !specialization.isBlank()) {
-            spec = spec.and((root, query, cb) -> cb.equal(cb.lower(root.get("specialization")), specialization.toLowerCase()));
+            String normalized = specialization.trim().toLowerCase();
+            spec = spec.and((root, query, cb) -> {
+                var csvExpr = cb.lower(cb.coalesce(root.get("specializationsCsv"), ""));
+                var wrapped = cb.concat(cb.concat(",", csvExpr), ",");
+                return cb.like(wrapped, "%," + normalized + ",%");
+            });
         }
 
         return courseRepository.findAll(spec, pageable);
@@ -125,11 +130,15 @@ public class CourseService {
                 .tags(tags)
                 .allowedRolesCsv(CsvUtil.join(req.allowedRoles()))
                 .allowedDepartmentIdsCsv(CsvUtil.join(req.allowedDepartmentIds()))
-                .specialization(req.specialization())
+                .specializationsCsv(CsvUtil.join(req.specializations()))
                 .instructions(req.instructions())
                 .aggregatorUrl(req.aggregatorUrl())
                 .coverUrl(req.coverUrl())
                 .companyCost(req.companyCost())
+                .partnerName(req.partnerName())
+                .partnerLocation(req.partnerLocation())
+                .startDate(req.startDate())
+                .endDate(req.endDate())
                 .build();
 
         return courseRepository.save(course);
@@ -160,20 +169,24 @@ public class CourseService {
         course.setTags(tags);
         course.setAllowedRolesCsv(CsvUtil.join(req.allowedRoles()));
         course.setAllowedDepartmentIdsCsv(CsvUtil.join(req.allowedDepartmentIds()));
-        course.setSpecialization(req.specialization());
+        course.setSpecializationsCsv(CsvUtil.join(req.specializations()));
         course.setInstructions(req.instructions());
         course.setAggregatorUrl(req.aggregatorUrl());
         course.setCoverUrl(req.coverUrl());
         course.setCompanyCost(req.companyCost());
+        course.setPartnerName(req.partnerName());
+        course.setPartnerLocation(req.partnerLocation());
+        course.setStartDate(req.startDate());
+        course.setEndDate(req.endDate());
 
         return courseRepository.save(course);
     }
 
     @Transactional
     @CacheEvict(cacheNames = {"courseCatalog", "courseById"}, allEntries = true)
-    public Course updateSpecialization(String id, String specialization) {
+    public Course updateSpecializations(String id, Set<String> specializations) {
         Course course = getById(id);
-        course.setSpecialization(specialization);
+        course.setSpecializationsCsv(CsvUtil.join(specializations));
         return courseRepository.save(course);
     }
 }

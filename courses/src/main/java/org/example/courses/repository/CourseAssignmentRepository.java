@@ -16,4 +16,6 @@ public interface CourseAssignmentRepository extends JpaRepository<CourseAssignme
     List<CourseAssignment> findByUserIdAndCreatedAtBetween(String userId, OffsetDateTime from, OffsetDateTime to);
 
     long countByUserIdAndCreatedAtBetween(String userId, OffsetDateTime from, OffsetDateTime to);
+
+    boolean existsByUserIdAndCourse_Id(String userId, String courseId);
 }

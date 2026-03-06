@@ -21,7 +21,7 @@ public record CourseAssignmentDto(
         String courseCoverUrl,
         String courseAggregatorUrl,
         String courseInstructions,
-        String courseSpecialization,
+        java.util.Set<String> courseSpecializations,
         BigDecimal courseCompanyCost,
         String assignedBy,
         LocalDate dueDate,

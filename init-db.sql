@@ -214,6 +214,10 @@ CREATE TABLE IF NOT EXISTS courses.course (
     aggregator_url TEXT,
     cover_url TEXT,
     company_cost NUMERIC(12,2),
+    partner_name VARCHAR(255),
+    partner_location VARCHAR(255),
+    start_date DATE,
+    end_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_course_category FOREIGN KEY (category_id) REFERENCES courses.category(id) ON DELETE SET NULL
@@ -225,6 +229,10 @@ ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS instructions TEXT;
 ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS aggregator_url TEXT;
 ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS cover_url TEXT;
 ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS company_cost NUMERIC(12,2);
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS partner_name VARCHAR(255);
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS partner_location VARCHAR(255);
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS start_date DATE;
+ALTER TABLE courses.course ADD COLUMN IF NOT EXISTS end_date DATE;
 
 -- Таблица связей курс-тег
 CREATE TABLE IF NOT EXISTS courses.course_tag (

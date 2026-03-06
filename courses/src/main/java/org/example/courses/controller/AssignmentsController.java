@@ -6,6 +6,7 @@ import org.example.courses.dto.CourseAssignmentDto;
 import org.example.courses.dto.CourseAssignmentRequest;
 import org.example.courses.model.CourseAssignment;
 import org.example.courses.service.AssignmentService;
+import org.example.courses.util.CsvUtil;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
@@ -23,7 +24,11 @@ public class AssignmentsController {
      */
     @PostMapping("/courses/assign")
     public CourseAssignment assign(@Valid @RequestBody CourseAssignmentRequest req) {
-        return assignmentService.assign(req);
+        try {
+            return assignmentService.assign(req);
+        } catch (IllegalStateException ex) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage(), ex);
+        }
     }
 
     /**
@@ -61,7 +66,7 @@ public class AssignmentsController {
                         a.getCourse() != null ? a.getCourse().getCoverUrl() : null,
                         a.getCourse() != null ? a.getCourse().getAggregatorUrl() : null,
                         a.getCourse() != null ? a.getCourse().getInstructions() : null,
-                        a.getCourse() != null ? a.getCourse().getSpecialization() : null,
+                        a.getCourse() != null ? CsvUtil.splitToSet(a.getCourse().getSpecializationsCsv()) : java.util.Set.of(),
                         a.getCourse() != null ? a.getCourse().getCompanyCost() : null,
                         a.getAssignedBy(),
                         a.getDueDate(),

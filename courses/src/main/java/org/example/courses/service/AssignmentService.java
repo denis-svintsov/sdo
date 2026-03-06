@@ -30,6 +30,9 @@ public class AssignmentService {
     @Transactional
     public CourseAssignment assign(CourseAssignmentRequest req) {
         enforceQuarterLimit(req.userId());
+        if (courseAssignmentRepository.existsByUserIdAndCourse_Id(req.userId(), req.courseId())) {
+            throw new IllegalStateException("Course already assigned to this user.");
+        }
         Course course = courseRepository.findById(req.courseId())
                 .orElseThrow(() -> new IllegalArgumentException("Course not found: " + req.courseId()));
 
@@ -59,7 +62,7 @@ public class AssignmentService {
         return courseAssignmentRepository.findByUserId(userId);
     }
 
-    private void enforceQuarterLimit(String userId) {
+    public long countCurrentQuarterAssigned(String userId) {
         OffsetDateTime now = OffsetDateTime.now();
         int month = now.getMonthValue();
         int startMonth = ((month - 1) / 3) * 3 + 1;
@@ -71,7 +74,11 @@ public class AssignmentService {
                 now.getOffset()
         );
         OffsetDateTime end = start.plusMonths(3);
-        long count = courseAssignmentRepository.countByUserIdAndCreatedAtBetween(userId, start, end);
+        return courseAssignmentRepository.countByUserIdAndCreatedAtBetween(userId, start, end);
+    }
+
+    private void enforceQuarterLimit(String userId) {
+        long count = countCurrentQuarterAssigned(userId);
         if (count >= 3) {
             throw new IllegalStateException("Quarter limit reached. You can select up to 3 courses per quarter.");
         }

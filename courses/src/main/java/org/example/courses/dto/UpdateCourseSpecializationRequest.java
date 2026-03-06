@@ -1,8 +1,10 @@
 package org.example.courses.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
+
+import java.util.Set;
 
 public record UpdateCourseSpecializationRequest(
-        @NotBlank String specialization
+        @NotEmpty Set<String> specializations
 ) {
 }

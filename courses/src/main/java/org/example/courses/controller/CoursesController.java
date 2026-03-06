@@ -9,6 +9,7 @@ import org.example.courses.dto.UpdateCourseRequest;
 import org.example.courses.model.CourseStatus;
 import org.example.courses.model.DifficultyLevel;
 import org.example.courses.service.AccessControlService;
+import org.example.courses.service.AssignmentService;
 import org.example.courses.service.CourseService;
 import org.example.courses.users.UserAccountRepository;
 import org.springframework.data.domain.Page;
@@ -28,6 +29,7 @@ public class CoursesController {
     private final CourseService courseService;
     private final AccessControlService accessControlService;
     private final UserAccountRepository userAccountRepository;
+    private final AssignmentService assignmentService;
 
     /**
      * Каталог курсов с поиском и фильтрацией.
@@ -72,7 +74,12 @@ public class CoursesController {
         var user = userAccountRepository.findById(userId).orElse(null);
         String specialization = user != null ? user.getSpecialization() : null;
         var pageResult = courseService.catalogDto(null, null, null, CourseStatus.ACTIVE, null, specialization, pageable);
+        var assignedCourseIds = assignmentService.getAssignedCourses(userId).stream()
+                .map(a -> a.getCourse() != null ? a.getCourse().getId() : null)
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toSet());
         List<CourseDto> filtered = pageResult.getContent().stream()
+                .filter(c -> !assignedCourseIds.contains(c.id()))
                 .filter(c -> accessControlService.canAccessCourse(userId, c.allowedRoles(), c.allowedDepartmentIds()))
                 .collect(Collectors.toList());
         return new PageImpl<>(filtered, pageable, filtered.size());
@@ -104,6 +111,6 @@ public class CoursesController {
     @PatchMapping("/{id}/specialization")
     public CourseDto updateSpecialization(@PathVariable String id,
                                           @Valid @RequestBody UpdateCourseSpecializationRequest req) {
-        return courseService.getDtoById(courseService.updateSpecialization(id, req.specialization()).getId());
+        return courseService.getDtoById(courseService.updateSpecializations(id, req.specializations()).getId());
     }
 }

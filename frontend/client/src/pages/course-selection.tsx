@@ -2,34 +2,54 @@ import { Layout } from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Check, GripVertical, AlertCircle, Info } from "lucide-react";
+import { Check, GripVertical, Info } from "lucide-react";
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import {
   assignCourse,
   CourseDto,
+  fetchAssignedCourses,
   fetchRecommendedCourses,
 } from "@/lib/coursesApi";
 
 export default function CourseSelection() {
   const [step, setStep] = useState(1);
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
-  const [selectedSpecialization, setSelectedSpecialization] = useState<string>("");
   const { toast } = useToast();
-  const { user, updateSpecialization } = useAuth();
+  const { user } = useAuth();
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["courses-recommended", user?.specialization],
     queryFn: () => fetchRecommendedCourses({ page: 0, size: 60 }),
   });
 
-  const courses = data?.content ?? [];
+  const { data: assignedCourses = [] } = useQuery({
+    queryKey: ["assigned-courses", user?.id],
+    queryFn: () => fetchAssignedCourses(),
+    enabled: !!user?.id,
+  });
+
+  const isInCurrentQuarter = (iso?: string | null) => {
+    if (!iso) return false;
+    const d = new Date(iso);
+    const now = new Date();
+    const q = Math.floor(d.getMonth() / 3);
+    const qNow = Math.floor(now.getMonth() / 3);
+    return d.getFullYear() === now.getFullYear() && q === qNow;
+  };
+
+  const currentQuarterAssignedCount = assignedCourses.filter((c) => isInCurrentQuarter(c.createdAt)).length;
+  const isQuarterLimitReached = currentQuarterAssignedCount >= 3;
+
+  const assignedCourseIds = new Set(assignedCourses.map((c) => c.courseId).filter(Boolean));
+  const courses = (data?.content ?? []).filter((c) => !assignedCourseIds.has(c.id));
+  const requiredSelectionCount = Math.min(3, courses.length);
   const selectedCourseList = useMemo(
     () => courses.filter((course) => selectedCourses.includes(course.id)),
     [courses, selectedCourses],
@@ -56,10 +76,10 @@ export default function CourseSelection() {
     if (selectedCourses.includes(id)) {
       setSelectedCourses(prev => prev.filter(c => c !== id));
     } else {
-      if (selectedCourses.length >= 3) {
+      if (selectedCourses.length >= requiredSelectionCount) {
         toast({
-          title: "Максимум 3 курса",
-          description: "Вы не можете выбрать более 3 курсов одновременно.",
+          title: `Максимум ${requiredSelectionCount} курса`,
+          description: `Вы не можете выбрать более ${requiredSelectionCount} курсов одновременно.`,
           variant: "destructive"
         });
         return;
@@ -69,10 +89,26 @@ export default function CourseSelection() {
   };
 
   const nextStep = () => {
-    if (step === 2 && selectedCourses.length !== 3) {
+    if (step === 2 && courses.length === 0) {
       toast({
-        title: "Выберите 3 курса",
-        description: "Для продолжения необходимо выбрать ровно 3 курса.",
+        title: "Нет доступных курсов",
+        description: "Сейчас нет курсов для выбора в этом квартале.",
+        variant: "destructive"
+      });
+      return;
+    }
+    if (step === 2 && requiredSelectionCount > 0 && selectedCourses.length !== requiredSelectionCount) {
+      toast({
+        title: `Выберите ${requiredSelectionCount} курса`,
+        description: `Для продолжения необходимо выбрать ровно ${requiredSelectionCount} курсов.`,
+        variant: "destructive"
+      });
+      return;
+    }
+    if (step === 2 && isQuarterLimitReached) {
+      toast({
+        title: "Курсы уже назначены",
+        description: "В текущем квартале уже назначено 3 курса.",
         variant: "destructive"
       });
       return;
@@ -81,32 +117,6 @@ export default function CourseSelection() {
   };
 
   const prevStep = () => setStep(prev => prev - 1);
-
-  const saveSpecialization = async () => {
-    const value = selectedSpecialization || user?.specialization || "";
-    if (!value) {
-      toast({
-        title: "Выберите специализацию",
-        description: "Без специализации рекомендации будут общими.",
-        variant: "destructive",
-      });
-      return;
-    }
-    try {
-      await updateSpecialization(value);
-      toast({
-        title: "Специализация обновлена",
-        description: "Список курсов подгружен с учетом выбранной специализации.",
-      });
-      nextStep();
-    } catch (e) {
-      toast({
-        title: "Не удалось обновить специализацию",
-        description: (e as Error).message,
-        variant: "destructive",
-      });
-    }
-  };
 
   const difficultyLabel = (course: CourseDto) => {
     if (!course.difficulty) return "Сложность не указана";
@@ -131,9 +141,9 @@ export default function CourseSelection() {
 
         {/* Wizard Progress */}
         <div className="relative">
-          <Progress value={step * 33.3} className="h-2" />
+          <Progress value={(step / 4) * 100} className="h-2" />
           <div className="absolute top-0 mt-[-6px] flex w-full justify-between px-1">
-            {[1, 2, 3].map((s) => (
+            {[1, 2, 3, 4].map((s) => (
               <div 
                 key={s}
                 className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold transition-colors ${
@@ -148,6 +158,7 @@ export default function CourseSelection() {
             <span>Специальность</span>
             <span>Выбор курсов</span>
             <span>Утверждение</span>
+            <span>Готово</span>
           </div>
         </div>
 
@@ -168,30 +179,8 @@ export default function CourseSelection() {
                       {user?.specialization ?? "Не указана"}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Select
-                      value={selectedSpecialization || user?.specialization || ""}
-                      onValueChange={setSelectedSpecialization}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите специализацию" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Software Engineering">Разработка ПО</SelectItem>
-                        <SelectItem value="Project Management">Управление проектами</SelectItem>
-                        <SelectItem value="Data Analytics">Аналитика данных</SelectItem>
-                        <SelectItem value="Information Security">Информационная безопасность</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {!user?.specialization && (
-                    <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 p-3 rounded-md border border-amber-100">
-                      <AlertCircle className="h-4 w-4" />
-                      Специализация не указана в профиле, будут показаны все активные курсы.
-                    </div>
-                  )}
                   <div className="flex justify-end">
-                    <Button onClick={saveSpecialization}>Продолжить</Button>
+                    <Button onClick={nextStep}>Продолжить</Button>
                   </div>
                 </div>
               </CardContent>
@@ -207,9 +196,9 @@ export default function CourseSelection() {
             className="space-y-6"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-semibold">Выберите 3 курса из списка</h2>
+              <h2 className="text-xl font-semibold">Выберите {requiredSelectionCount} курса из списка</h2>
               <div className="text-sm font-medium">
-                Выбрано: <span className={selectedCourses.length === 3 ? "text-green-600" : "text-primary"}>{selectedCourses.length}/3</span>
+                Выбрано: <span className={selectedCourses.length === requiredSelectionCount ? "text-green-600" : "text-primary"}>{selectedCourses.length}/{requiredSelectionCount}</span>
               </div>
             </div>
 
@@ -221,6 +210,11 @@ export default function CourseSelection() {
             {isError && (
               <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive">
                 Не удалось загрузить курсы. {(error as Error).message}
+              </div>
+            )}
+            {isQuarterLimitReached && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
+                Курсы уже назначены: в текущем квартале у вас уже 3 назначенных курса.
               </div>
             )}
             {!isLoading && !isError && courses.length === 0 && (
@@ -235,7 +229,10 @@ export default function CourseSelection() {
                   className={`group relative flex items-start gap-4 rounded-lg border p-4 transition-all hover:shadow-md ${
                     selectedCourses.includes(course.id) ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-card'
                   }`}
-                  onClick={() => toggleCourse(course.id)}
+                  onClick={() => {
+                    if (isQuarterLimitReached) return;
+                    toggleCourse(course.id);
+                  }}
                 >
                   <div className="h-24 w-40 flex-shrink-0 overflow-hidden rounded-md bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 flex items-center justify-center text-slate-500 text-xs font-medium">
                     Курс
@@ -247,9 +244,6 @@ export default function CourseSelection() {
                         <p className="text-sm text-muted-foreground">
                           {difficultyLabel(course)} • {durationLabel(course)}
                         </p>
-                      </div>
-                      <div className="font-bold text-primary">
-                        {course.status === "ACTIVE" ? "Доступен" : "Черновик"}
                       </div>
                     </div>
                     <p className="mt-2 text-sm text-muted-foreground line-clamp-2">
@@ -271,7 +265,16 @@ export default function CourseSelection() {
 
             <div className="flex justify-end gap-3 pt-4">
               <Button variant="outline" onClick={prevStep}>Назад</Button>
-              <Button onClick={nextStep} disabled={selectedCourses.length !== 3}>Далее</Button>
+              <Button
+                onClick={nextStep}
+                disabled={
+                  isQuarterLimitReached ||
+                  courses.length === 0 ||
+                  (requiredSelectionCount > 0 && selectedCourses.length !== requiredSelectionCount)
+                }
+              >
+                Далее
+              </Button>
             </div>
           </motion.div>
         )}
@@ -332,10 +335,7 @@ export default function CourseSelection() {
                     onClick={async () => {
                       try {
                         await assignMutation.mutateAsync(selectedCourses);
-                        toast({
-                          title: "Заявка отправлена",
-                          description: "Ваш выбор зафиксирован в системе.",
-                        });
+                        setStep(4);
                       } catch (err) {
                         toast({
                           title: "Ошибка при отправке",
@@ -347,6 +347,31 @@ export default function CourseSelection() {
                   >
                     Отправить на согласование
                   </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Step 4: Done */}
+        {step === 4 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <Card>
+              <CardContent className="p-6">
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-semibold">Курс отправлен на согласование</h2>
+                  <div className="rounded-lg border bg-emerald-50 p-4 text-sm text-emerald-900 border-emerald-200">
+                    Ваш выбор зафиксирован. Дальше вы можете перейти к назначенным курсам.
+                  </div>
+                  <div className="flex justify-end">
+                    <Button asChild>
+                      <Link href="/catalog">Перейти к назначенным курсам</Link>
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
