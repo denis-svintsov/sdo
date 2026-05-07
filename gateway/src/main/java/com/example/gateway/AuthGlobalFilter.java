@@ -38,9 +38,14 @@ public class AuthGlobalFilter implements GlobalFilter, Ordered {
         return authValidationClient.validate(authHeader)
                 .flatMap(result -> {
                     ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                            .header("X-User-Id", result.userId() == null ? "" : result.userId())
-                            .header("X-User-Name", result.username() == null ? "" : result.username())
-                            .header("X-User-Roles", result.roles() == null ? "" : String.join(",", result.roles()))
+                            .headers(headers -> {
+                                headers.remove("X-User-Id");
+                                headers.remove("X-User-Name");
+                                headers.remove("X-User-Roles");
+                                headers.set("X-User-Id", result.userId() == null ? "" : result.userId());
+                                headers.set("X-User-Name", result.username() == null ? "" : result.username());
+                                headers.set("X-User-Roles", result.roles() == null ? "" : String.join(",", result.roles()));
+                            })
                             .build();
                     return chain.filter(exchange.mutate().request(mutatedRequest).build());
                 })

@@ -7,19 +7,16 @@ import org.example.auth.dto.AuthValidationResponse;
 import org.example.auth.dto.ErrorResponse;
 import org.example.auth.dto.LoginRequest;
 import org.example.auth.dto.RegisterRequest;
-import org.example.auth.dto.UpdateSpecializationRequest;
 import org.example.auth.repository.UserRepository;
 import org.example.auth.service.AuthService;
 import org.example.auth.service.JwtService;
 import org.example.auth.service.SessionService;
+import org.example.auth.users.UsersServiceClient;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -30,16 +27,19 @@ public class AuthController {
     private final JwtService jwtService;
     private final SessionService sessionService;
     private final UserRepository userRepository;
+    private final UsersServiceClient usersServiceClient;
 
     public AuthController(
             AuthService authService,
             JwtService jwtService,
             SessionService sessionService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            UsersServiceClient usersServiceClient) {
         this.authService = authService;
         this.jwtService = jwtService;
         this.sessionService = sessionService;
         this.userRepository = userRepository;
+        this.usersServiceClient = usersServiceClient;
     }
 
     private String getClientIpAddress(HttpServletRequest request) {
@@ -54,6 +54,17 @@ public class AuthController {
         return request.getRemoteAddr();
     }
 
+    private String mapRegisterErrorMessage(Exception ex) {
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            return "Registration failed";
+        }
+        if (message.contains("rollback-only")) {
+            return "Registration failed. Please check input data and try again.";
+        }
+        return message;
+    }
+
     @PostMapping("/register")
     public ResponseEntity<?> register(
             @Valid @RequestBody RegisterRequest request,
@@ -63,8 +74,8 @@ public class AuthController {
             String userAgent = httpRequest.getHeader("User-Agent");
             AuthResponse response = authService.register(request, ipAddress, userAgent);
             return ResponseEntity.ok(response);
-        } catch (RuntimeException e) {
-            ErrorResponse error = new ErrorResponse(e.getMessage(), "BAD_REQUEST");
+        } catch (Exception e) {
+            ErrorResponse error = new ErrorResponse(mapRegisterErrorMessage(e), "BAD_REQUEST");
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
         }
     }
@@ -98,29 +109,6 @@ public class AuthController {
         }
     }
 
-    @PutMapping("/me/specialization")
-    public ResponseEntity<?> updateMySpecialization(
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
-            @Valid @RequestBody UpdateSpecializationRequest request) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Missing or invalid Authorization header"));
-        }
-        try {
-            String token = authHeader.substring(7);
-            String username = jwtService.extractUsername(token);
-            if (!jwtService.validateToken(token, username) || !sessionService.isSessionValid(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Token is invalid or expired"));
-            }
-            AuthResponse updated = authService.updateSpecializationByUsername(username, request.specialization());
-            return ResponseEntity.ok(updated);
-        } catch (Exception ex) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "Unable to update specialization"));
-        }
-    }
-
     @GetMapping("/validate")
     public ResponseEntity<?> validate(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
@@ -144,7 +132,10 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "User not found"));
             }
-            var roles = user.getRoles().stream().map(Enum::name).toList();
+            var userContext = usersServiceClient.getUserContext(user.getId());
+            var roles = userContext == null || userContext.roles() == null
+                    ? java.util.List.of("USER")
+                    : userContext.roles().stream().map(String::toUpperCase).toList();
             return ResponseEntity.ok(new AuthValidationResponse(user.getId(), user.getUsername(), roles));
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -157,14 +148,4 @@ public class AuthController {
         return ResponseEntity.ok("Auth service is running");
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            errors.put(fieldName, errorMessage);
-        });
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errors);
-    }
 }

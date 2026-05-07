@@ -1,3 +1,5 @@
+import { extractApiErrorMessage } from "@/lib/apiError";
+
 export type CourseStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 export type DifficultyLevel = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
 
@@ -12,11 +14,15 @@ export interface CourseDto {
   tagIds?: string[];
   allowedRoles?: string[];
   allowedDepartmentIds?: string[];
-  specialization?: string | null;
+  specializations?: string[];
   instructions?: string | null;
   aggregatorUrl?: string | null;
   coverUrl?: string | null;
   companyCost?: number | null;
+  partnerName?: string | null;
+  partnerLocation?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
 }
 
 export interface Page<T> {
@@ -59,12 +65,39 @@ export interface AssignedCourseDto {
   courseCoverUrl?: string | null;
   courseAggregatorUrl?: string | null;
   courseInstructions?: string | null;
-  courseSpecialization?: string | null;
+  courseSpecializations?: string[];
   courseCompanyCost?: number | null;
+  courseStartDate?: string | null;
+  courseEndDate?: string | null;
   assignedBy?: string | null;
   dueDate?: string | null;
   status?: string | null;
   createdAt?: string | null;
+}
+
+export type AssignmentRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface AssignmentRequestDto {
+  id: string;
+  userId: string;
+  requestedBy: string;
+  courseId: string;
+  courseTitle?: string | null;
+  courseDifficulty?: DifficultyLevel | null;
+  courseDurationMinutes?: number | null;
+  courseCompanyCost?: number | null;
+  comment?: string | null;
+  dueDate?: string | null;
+  status: AssignmentRequestStatus;
+  reviewedBy?: string | null;
+  reviewerComment?: string | null;
+  createdAt?: string | null;
+  reviewedAt?: string | null;
+}
+
+export interface AssignmentPolicyDto {
+  maxCoursesPerQuarter: number;
+  updatedAt?: string | null;
 }
 
 const COURSES_API_URL =
@@ -88,8 +121,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
   const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(await extractApiErrorMessage(res));
   }
   return (await res.json()) as T;
 }
@@ -100,7 +132,7 @@ export async function fetchCourses(params?: {
   difficulty?: DifficultyLevel;
   status?: CourseStatus;
   tagId?: string;
-  specialization?: string;
+  positionId?: string;
   page?: number;
   size?: number;
 }): Promise<Page<CourseDto>> {
@@ -120,14 +152,6 @@ export async function fetchCourse(id: string): Promise<CourseDto> {
   return fetchJson<CourseDto>(buildUrl(`/courses/${id}`));
 }
 
-export async function updateCourseSpecialization(id: string, specialization: string): Promise<CourseDto> {
-  return fetchJson<CourseDto>(buildUrl(`/courses/${id}/specialization`), {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ specialization }),
-  });
-}
-
 export async function fetchAssignedCourses(): Promise<AssignedCourseDto[]> {
   return fetchJson<AssignedCourseDto[]>(buildUrl("/courses/assigned-courses/my"));
 }
@@ -142,6 +166,56 @@ export async function assignCourse(request: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(request),
+  });
+}
+
+export async function submitAssignmentRequest(request: {
+  userId: string;
+  courseId: string;
+  requestedBy: string;
+  comment?: string;
+  dueDate?: string;
+}) {
+  return fetchJson<AssignmentRequestDto>(buildUrl("/courses/assignment-requests"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+}
+
+export async function fetchMyAssignmentRequests(): Promise<AssignmentRequestDto[]> {
+  return fetchJson<AssignmentRequestDto[]>(buildUrl("/courses/assignment-requests/my"));
+}
+
+export async function fetchAssignmentRequests(status?: AssignmentRequestStatus): Promise<AssignmentRequestDto[]> {
+  return fetchJson<AssignmentRequestDto[]>(buildUrl("/courses/assignment-requests", { status }));
+}
+
+export async function approveAssignmentRequest(requestId: string, payload?: { reviewerComment?: string; dueDate?: string }) {
+  return fetchJson<AssignmentRequestDto>(buildUrl(`/courses/assignment-requests/${requestId}/approve`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function rejectAssignmentRequest(requestId: string, payload?: { reviewerComment?: string }) {
+  return fetchJson<AssignmentRequestDto>(buildUrl(`/courses/assignment-requests/${requestId}/reject`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload ?? {}),
+  });
+}
+
+export async function fetchAssignmentPolicy(): Promise<AssignmentPolicyDto> {
+  return fetchJson<AssignmentPolicyDto>(buildUrl("/courses/assignment-policy"));
+}
+
+export async function updateAssignmentPolicy(maxCoursesPerQuarter: number): Promise<AssignmentPolicyDto> {
+  return fetchJson<AssignmentPolicyDto>(buildUrl("/courses/assignment-policy"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ maxCoursesPerQuarter }),
   });
 }
 
@@ -167,8 +241,7 @@ export async function downloadCertificate(id: string, userId: string): Promise<B
     headers,
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
+    throw new Error(await extractApiErrorMessage(res));
   }
   return await res.blob();
 }

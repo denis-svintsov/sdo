@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   LayoutDashboard, 
   BookOpen, 
@@ -14,6 +15,8 @@ import {
 
 export function Sidebar() {
   const [location] = useLocation();
+  const { user } = useAuth();
+  const isAdmin = (user?.roles ?? []).includes("ADMIN");
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Дашборд", href: "/" },
@@ -55,25 +58,28 @@ export function Sidebar() {
             </Link>
           ))}
 
-          <div className="my-4 border-t px-4 pt-4 text-xs font-semibold uppercase text-muted-foreground">
-            Администратор
-          </div>
-          
-          {adminItems.map((item) => (
-            <Link key={item.href} href={item.href}>
-              <a
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  location === item.href
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-muted-foreground"
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </a>
-            </Link>
-          ))}
+          {isAdmin && (
+            <>
+              <div className="my-4 border-t px-4 pt-4 text-xs font-semibold uppercase text-muted-foreground">
+                Администратор
+              </div>
+              {adminItems.map((item) => (
+                <Link key={item.href} href={item.href}>
+                  <a
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                      location === item.href
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </a>
+                </Link>
+              ))}
+            </>
+          )}
         </nav>
       </div>
 
