@@ -1,6 +1,7 @@
 package org.example.courses.service;
 
 import lombok.RequiredArgsConstructor;
+import org.example.courses.dto.LearningHistoryDto;
 import org.example.courses.dto.ProgressSummaryDto;
 import org.example.courses.dto.UserCourseProgressDto;
 import org.example.courses.kafka.CourseCompletedEvent;
@@ -53,6 +54,7 @@ public class ProgressService {
             if (already.contains(courseId)) continue;
             int total = lessonRepository.findByModuleCourseId(courseId).size();
             courseDtos.add(new UserCourseProgressDto(courseId, en.getCourse().getTitle(), 0, total, 0));
+            already.add(courseId);
         }
 
         return new ProgressSummaryDto(userId, courseDtos);
@@ -60,6 +62,14 @@ public class ProgressService {
 
     public ProgressSummaryDto getUserProgress(String userId) {
         return getMyProgress(userId);
+    }
+
+    public List<LearningHistoryDto> getMyHistory(String userId, int limit) {
+        int safeLimit = Math.max(1, Math.min(limit, 200));
+        return learningHistoryRepository.findByUserIdOrderByTimestampDesc(userId).stream()
+                .limit(safeLimit)
+                .map(h -> new LearningHistoryDto(h.getId(), h.getAction(), h.getTimestamp(), h.getDetails()))
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -147,4 +157,3 @@ public class ProgressService {
         }
     }
 }
-

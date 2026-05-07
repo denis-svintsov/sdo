@@ -67,7 +67,7 @@ public class Course {
     private String allowedDepartmentIdsCsv;
 
     /**
-     * Специализации курса, хранятся в CSV (legacy column name: specialization).
+     * Целевые должности курса, хранятся в CSV (legacy column name: specialization).
      */
     @Column(name = "specialization")
     private String specializationsCsv;

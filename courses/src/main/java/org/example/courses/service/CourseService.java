@@ -36,7 +36,7 @@ public class CourseService {
                                DifficultyLevel difficulty,
                                CourseStatus status,
                                String tagId,
-                               String specialization,
+                               String positionId,
                                Pageable pageable) {
         Specification<Course> spec = Specification.where(null);
 
@@ -70,8 +70,8 @@ public class CourseService {
             });
         }
 
-        if (specialization != null && !specialization.isBlank()) {
-            String normalized = specialization.trim().toLowerCase();
+        if (positionId != null && !positionId.isBlank()) {
+            String normalized = positionId.trim().toLowerCase();
             spec = spec.and((root, query, cb) -> {
                 var csvExpr = cb.lower(cb.coalesce(root.get("specializationsCsv"), ""));
                 var wrapped = cb.concat(cb.concat(",", csvExpr), ",");
@@ -84,16 +84,16 @@ public class CourseService {
 
     @Cacheable(
             cacheNames = "courseCatalog",
-            key = "T(String).format('%s|%s|%s|%s|%s|%s|%s|%s', #q, #categoryId, #difficulty, #status, #tagId, #specialization, #pageable.pageNumber, #pageable.pageSize)"
+            key = "T(String).format('%s|%s|%s|%s|%s|%s|%s|%s', #q, #categoryId, #difficulty, #status, #tagId, #positionId, #pageable.pageNumber, #pageable.pageSize)"
     )
     public Page<CourseDto> catalogDto(String q,
                                       String categoryId,
                                       DifficultyLevel difficulty,
                                       CourseStatus status,
                                       String tagId,
-                                      String specialization,
+                                      String positionId,
                                       Pageable pageable) {
-        return catalog(q, categoryId, difficulty, status, tagId, specialization, pageable)
+        return catalog(q, categoryId, difficulty, status, tagId, positionId, pageable)
                 .map(courseMapper::toDto);
     }
 
@@ -182,11 +182,4 @@ public class CourseService {
         return courseRepository.save(course);
     }
 
-    @Transactional
-    @CacheEvict(cacheNames = {"courseCatalog", "courseById"}, allEntries = true)
-    public Course updateSpecializations(String id, Set<String> specializations) {
-        Course course = getById(id);
-        course.setSpecializationsCsv(CsvUtil.join(specializations));
-        return courseRepository.save(course);
-    }
 }

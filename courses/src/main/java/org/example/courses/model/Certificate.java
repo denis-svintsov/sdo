@@ -37,7 +37,7 @@ public class Certificate {
     private String certificateUrl;
 
     @Lob
-    @Column(name = "pdf_bytes", nullable = false)
+    @Column(name = "pdf_bytes", nullable = false, columnDefinition = "bytea")
     private byte[] pdfBytes;
 
     @Column(name = "hash", nullable = false, unique = true)
@@ -50,4 +50,3 @@ public class Certificate {
         }
     }
 }
-

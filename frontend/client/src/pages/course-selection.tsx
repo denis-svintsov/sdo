@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Check, GripVertical, Info } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,21 +11,30 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { extractApiErrorMessage } from "@/lib/apiError";
 import {
-  assignCourse,
   CourseDto,
+  fetchAssignmentPolicy,
   fetchAssignedCourses,
+  fetchMyAssignmentRequests,
   fetchRecommendedCourses,
+  submitAssignmentRequest,
 } from "@/lib/coursesApi";
+
+interface Position {
+  positionId: string;
+  title: string;
+}
 
 export default function CourseSelection() {
   const [step, setStep] = useState(1);
   const [selectedCourses, setSelectedCourses] = useState<string[]>([]);
+  const [requestComment, setRequestComment] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
 
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["courses-recommended", user?.specialization],
+    queryKey: ["courses-recommended", user?.positionId],
     queryFn: () => fetchRecommendedCourses({ page: 0, size: 60 }),
   });
 
@@ -34,6 +43,38 @@ export default function CourseSelection() {
     queryFn: () => fetchAssignedCourses(),
     enabled: !!user?.id,
   });
+
+  const { data: myRequests = [] } = useQuery({
+    queryKey: ["assignment-requests-my", user?.id],
+    queryFn: () => fetchMyAssignmentRequests(),
+    enabled: !!user?.id,
+  });
+
+  const { data: assignmentPolicy } = useQuery({
+    queryKey: ["assignment-policy"],
+    queryFn: () => fetchAssignmentPolicy(),
+  });
+
+  const authBaseUrl =
+    import.meta.env.VITE_AUTH_API_URL ?? "http://localhost:8080/auth";
+
+  const { data: positions = [] } = useQuery({
+    queryKey: ["positions"],
+    queryFn: async (): Promise<Position[]> => {
+      const res = await fetch(`${authBaseUrl}/positions`);
+      if (!res.ok) {
+        throw new Error(await extractApiErrorMessage(res, "Не удалось загрузить список должностей"));
+      }
+      return res.json();
+    },
+  });
+
+  const positionTitle = useMemo(() => {
+    if (!user?.positionId) return null;
+    const found = positions.find((p) => p.positionId === user.positionId);
+    return found?.title ?? null;
+  }, [positions, user?.positionId]);
+  const hasPosition = !!user?.positionId;
 
   const isInCurrentQuarter = (iso?: string | null) => {
     if (!iso) return false;
@@ -44,16 +85,54 @@ export default function CourseSelection() {
     return d.getFullYear() === now.getFullYear() && q === qNow;
   };
 
-  const currentQuarterAssignedCount = assignedCourses.filter((c) => isInCurrentQuarter(c.createdAt)).length;
-  const isQuarterLimitReached = currentQuarterAssignedCount >= 3;
+  const currentQuarterStart = useMemo(() => {
+    const now = new Date();
+    const startMonth = Math.floor(now.getMonth() / 3) * 3;
+    return new Date(now.getFullYear(), startMonth, 1, 0, 0, 0, 0);
+  }, []);
+
+  const isActiveAssignmentStatus = (status?: string | null) =>
+    status === "ASSIGNED" || status === "IN_PROGRESS";
+
+  const quarterLimit = assignmentPolicy?.maxCoursesPerQuarter ?? 3;
+  const currentQuarterAssignedCount = assignedCourses.filter(
+    (c) => isActiveAssignmentStatus(c.status) && isInCurrentQuarter(c.createdAt),
+  ).length;
+  const carriedUndatedActiveCount = assignedCourses.filter((c) => {
+    if (!isActiveAssignmentStatus(c.status)) return false;
+    if (isInCurrentQuarter(c.createdAt)) return false;
+    if (c.dueDate || c.courseEndDate) return false;
+    if (!c.createdAt) return true;
+    const created = new Date(c.createdAt);
+    if (Number.isNaN(created.getTime())) return true;
+    return created < currentQuarterStart;
+  }).length;
+  const currentQuarterPendingCount = myRequests.filter(
+    (request) => request.status === "PENDING" && isInCurrentQuarter(request.createdAt),
+  ).length;
+  const currentQuarterTotalCount = currentQuarterAssignedCount + carriedUndatedActiveCount + currentQuarterPendingCount;
+  const isQuarterLimitReached = currentQuarterTotalCount >= quarterLimit;
 
   const assignedCourseIds = new Set(assignedCourses.map((c) => c.courseId).filter(Boolean));
+  const pendingCourseIds = new Set(
+    myRequests
+      .filter((request) => request.status === "PENDING" && !!request.courseId)
+      .map((request) => request.courseId),
+  );
   const courses = (data?.content ?? []).filter((c) => !assignedCourseIds.has(c.id));
-  const requiredSelectionCount = Math.min(3, courses.length);
+  const selectableCoursesCount = courses.filter((c) => !pendingCourseIds.has(c.id)).length;
+  const remainingQuota = Math.max(quarterLimit - currentQuarterTotalCount, 0);
+  const requiredSelectionCount = Math.min(remainingQuota, selectableCoursesCount);
   const selectedCourseList = useMemo(
     () => courses.filter((course) => selectedCourses.includes(course.id)),
     [courses, selectedCourses],
   );
+
+  useEffect(() => {
+    if (selectedCourses.length > requiredSelectionCount) {
+      setSelectedCourses((prev) => prev.slice(0, requiredSelectionCount));
+    }
+  }, [requiredSelectionCount, selectedCourses.length]);
 
   const assignMutation = useMutation({
     mutationFn: async (courseIds: string[]) => {
@@ -62,10 +141,11 @@ export default function CourseSelection() {
       }
       await Promise.all(
         courseIds.map((courseId) =>
-          assignCourse({
+          submitAssignmentRequest({
             userId: user.id,
             courseId,
-            assignedBy: user.id,
+            requestedBy: user.id,
+            comment: requestComment.trim() || undefined,
           }),
         ),
       );
@@ -73,6 +153,14 @@ export default function CourseSelection() {
   });
 
   const toggleCourse = (id: string) => {
+    if (pendingCourseIds.has(id)) {
+      toast({
+        title: "Курс уже на модерации",
+        description: "Этот курс уже отправлен на согласование и недоступен для повторного выбора.",
+        variant: "destructive"
+      });
+      return;
+    }
     if (selectedCourses.includes(id)) {
       setSelectedCourses(prev => prev.filter(c => c !== id));
     } else {
@@ -89,10 +177,18 @@ export default function CourseSelection() {
   };
 
   const nextStep = () => {
-    if (step === 2 && courses.length === 0) {
+    if (step === 1 && !hasPosition) {
+      toast({
+        title: "Должность не указана",
+        description: "Выбор курсов доступен после указания должности в профиле.",
+        variant: "destructive"
+      });
+      return;
+    }
+    if (step === 2 && selectableCoursesCount === 0) {
       toast({
         title: "Нет доступных курсов",
-        description: "Сейчас нет курсов для выбора в этом квартале.",
+        description: "Сейчас нет курсов, доступных для выбора в этом квартале.",
         variant: "destructive"
       });
       return;
@@ -108,7 +204,7 @@ export default function CourseSelection() {
     if (step === 2 && isQuarterLimitReached) {
       toast({
         title: "Курсы уже назначены",
-        description: "В текущем квартале уже назначено 3 курса.",
+        description: `В текущем квартале у вас уже ${currentQuarterTotalCount} из ${quarterLimit} курсов (назначенные + заявки).`,
         variant: "destructive"
       });
       return;
@@ -155,14 +251,14 @@ export default function CourseSelection() {
             ))}
           </div>
           <div className="mt-2 flex w-full justify-between px-0 text-xs text-muted-foreground">
-            <span>Специальность</span>
+            <span>Должность</span>
             <span>Выбор курсов</span>
             <span>Утверждение</span>
             <span>Готово</span>
           </div>
         </div>
 
-        {/* Step 1: Specialization */}
+        {/* Step 1: Position */}
         {step === 1 && (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -171,16 +267,21 @@ export default function CourseSelection() {
           >
             <Card>
               <CardContent className="p-6">
-                <h2 className="text-xl font-semibold mb-4">Ваша специальность</h2>
+                <h2 className="text-xl font-semibold mb-4">Ваша должность</h2>
                 <div className="space-y-4">
                   <div className="rounded-lg border bg-card p-4">
-                    <div className="text-sm text-muted-foreground">Специализация из профиля</div>
+                    <div className="text-sm text-muted-foreground">Должность из профиля</div>
                     <div className="mt-1 text-lg font-semibold">
-                      {user?.specialization ?? "Не указана"}
+                      {positionTitle ?? (user?.positionId ? "Должность не найдена" : "Не указана")}
                     </div>
                   </div>
+                  {!hasPosition && (
+                    <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                      Чтобы выбрать курсы, сначала укажите должность в профиле.
+                    </div>
+                  )}
                   <div className="flex justify-end">
-                    <Button onClick={nextStep}>Продолжить</Button>
+                    <Button onClick={nextStep} disabled={!hasPosition}>Продолжить</Button>
                   </div>
                 </div>
               </CardContent>
@@ -214,23 +315,28 @@ export default function CourseSelection() {
             )}
             {isQuarterLimitReached && (
               <div className="rounded-lg border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
-                Курсы уже назначены: в текущем квартале у вас уже 3 назначенных курса.
+                Лимит достигнут: в текущем квартале у вас уже {currentQuarterTotalCount} из {quarterLimit} курсов
+                (назначенные + заявки на согласовании).
               </div>
             )}
-            {!isLoading && !isError && courses.length === 0 && (
+            {!isLoading && !isError && selectableCoursesCount === 0 && (
               <div className="rounded-lg border p-6 text-center text-sm text-muted-foreground">
-                Доступных курсов пока нет.
+                Нет курсов, доступных для выбора.
               </div>
             )}
             <div className="grid gap-4">
-              {courses.map((course) => (
+              {courses.map((course) => {
+                const isPending = pendingCourseIds.has(course.id);
+                return (
                 <div 
                   key={course.id}
-                  className={`group relative flex items-start gap-4 rounded-lg border p-4 transition-all hover:shadow-md ${
+                  className={`group relative flex items-start gap-4 rounded-lg border p-4 transition-all ${
+                    isPending ? "opacity-80" : "hover:shadow-md"
+                  } ${
                     selectedCourses.includes(course.id) ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'bg-card'
                   }`}
                   onClick={() => {
-                    if (isQuarterLimitReached) return;
+                    if (isQuarterLimitReached || isPending) return;
                     toggleCourse(course.id);
                   }}
                 >
@@ -252,15 +358,22 @@ export default function CourseSelection() {
                     <div className="mt-3 flex gap-2">
                       <Badge variant="secondary" className="text-xs">{course.categoryId ?? "Без категории"}</Badge>
                       <Badge variant="outline" className="text-xs">{course.status ?? "Статус"}</Badge>
+                      {isPending && <Badge className="text-xs bg-amber-500">На модерации</Badge>}
                     </div>
                   </div>
                   <div className={`absolute right-4 top-4 h-6 w-6 rounded-full border-2 transition-colors ${
-                    selectedCourses.includes(course.id) ? 'border-primary bg-primary text-white' : 'border-muted-foreground'
+                    isPending
+                      ? "border-amber-500 bg-amber-500 text-white"
+                      : selectedCourses.includes(course.id)
+                        ? 'border-primary bg-primary text-white'
+                        : 'border-muted-foreground'
                   }`}>
-                    {selectedCourses.includes(course.id) && <Check className="h-4 w-4 m-0.5" />}
+                    {isPending && <Check className="h-4 w-4 m-0.5" />}
+                    {!isPending && selectedCourses.includes(course.id) && <Check className="h-4 w-4 m-0.5" />}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="flex justify-end gap-3 pt-4">
@@ -269,7 +382,7 @@ export default function CourseSelection() {
                 onClick={nextStep}
                 disabled={
                   isQuarterLimitReached ||
-                  courses.length === 0 ||
+                  selectableCoursesCount === 0 ||
                   (requiredSelectionCount > 0 && selectedCourses.length !== requiredSelectionCount)
                 }
               >
@@ -324,7 +437,12 @@ export default function CourseSelection() {
 
                 <div className="space-y-4">
                   <label className="text-sm font-medium">Комментарий для руководителя (обоснование выбора)</label>
-                  <Textarea placeholder="Опишите, как эти курсы помогут в вашей работе..." className="min-h-[100px]" />
+                  <Textarea
+                    placeholder="Опишите, как эти курсы помогут в вашей работе..."
+                    className="min-h-[100px]"
+                    value={requestComment}
+                    onChange={(e) => setRequestComment(e.target.value)}
+                  />
                 </div>
 
                 <div className="flex justify-end gap-3 pt-6">
@@ -365,7 +483,7 @@ export default function CourseSelection() {
                 <div className="space-y-6">
                   <h2 className="text-2xl font-semibold">Курс отправлен на согласование</h2>
                   <div className="rounded-lg border bg-emerald-50 p-4 text-sm text-emerald-900 border-emerald-200">
-                    Ваш выбор зафиксирован. Дальше вы можете перейти к назначенным курсам.
+                    Ваши заявки отправлены на модерацию. После утверждения курсы появятся в назначенных.
                   </div>
                   <div className="flex justify-end">
                     <Button asChild>

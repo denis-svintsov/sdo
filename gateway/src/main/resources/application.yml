@@ -47,7 +47,7 @@ spring:
         - id: users-service
           uri: ${USER_SERVICE_URL:http://users:8080}
           predicates:
-            - Path=/users/**
+            - Path=/users/**,/departments/**
         - id: courses-service
           uri: ${COURSES_SERVICE_URL:http://courses:8081}
           predicates:
@@ -55,7 +55,7 @@ spring:
         - id: communication-service
           uri: ${COMMUNICATION_SERVICE_URL:http://communication:8080}
           predicates:
-            - Path=/chat/**
+            - Path=/chat/**,/ws/chat/**
         - id: notification-service
           uri: ${NOTIFICATION_SERVICE_URL:http://notifications:8080}
           predicates:

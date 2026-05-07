@@ -15,6 +15,10 @@ import Chat from "@/pages/chat";
 import CalendarPage from "@/pages/calendar";
 import AuthPage from "@/pages/auth";
 import CourseDetail from "@/pages/course-detail";
+import CabinetProfilePage from "@/pages/cabinet-profile";
+import CabinetProgressPage from "@/pages/cabinet-progress";
+import CabinetHistoryPage from "@/pages/cabinet-history";
+import CabinetSettingsPage from "@/pages/cabinet-settings";
 
 function Router() {
   return (
@@ -58,6 +62,31 @@ function Router() {
       <Route path="/course/:id">
         <ProtectedRoute>
           <CourseDetail />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/cabinet">
+        <ProtectedRoute>
+          <CabinetProfilePage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/cabinet/profile">
+        <ProtectedRoute>
+          <CabinetProfilePage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/cabinet/progress">
+        <ProtectedRoute>
+          <CabinetProgressPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/cabinet/history">
+        <ProtectedRoute>
+          <CabinetHistoryPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/cabinet/settings">
+        <ProtectedRoute>
+          <CabinetSettingsPage />
         </ProtectedRoute>
       </Route>
       <Route component={NotFound} />

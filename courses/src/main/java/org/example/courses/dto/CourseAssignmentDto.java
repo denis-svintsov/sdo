@@ -23,6 +23,8 @@ public record CourseAssignmentDto(
         String courseInstructions,
         java.util.Set<String> courseSpecializations,
         BigDecimal courseCompanyCost,
+        LocalDate courseStartDate,
+        LocalDate courseEndDate,
         String assignedBy,
         LocalDate dueDate,
         AssignmentStatus status,

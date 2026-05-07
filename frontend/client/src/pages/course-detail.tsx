@@ -1,15 +1,13 @@
-import { useParams } from "wouter";
+import { Link, useParams } from "wouter";
 import { Layout } from "@/components/layout/Layout";
 import { useQuery } from "@tanstack/react-query";
-import { fetchAssignedCourses, fetchCourse } from "@/lib/coursesApi";
+import { fetchAssignedCourses, fetchCourse, fetchMyProgress } from "@/lib/coursesApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   Building2,
-  CalendarDays,
-  Clock3,
   ExternalLink,
   MapPin,
   MessageSquare,
@@ -31,13 +29,13 @@ function assignmentLabel(status?: string | null) {
   if (status === "ASSIGNED") return "Назначен";
   if (status === "IN_PROGRESS") return "В процессе";
   if (status === "COMPLETED") return "Завершен";
+  if (status === "OVERDUE") return "Просрочен";
   return status;
 }
 
 function assignmentProgress(status?: string | null) {
   if (status === "COMPLETED") return 100;
-  if (status === "IN_PROGRESS") return 50;
-  if (status === "ASSIGNED") return 10;
+  if (status === "OVERDUE") return 0;
   return 0;
 }
 
@@ -58,6 +56,12 @@ export default function CourseDetail() {
   const { data: assignedCourses = [] } = useQuery({
     queryKey: ["assigned-courses", user?.id],
     queryFn: () => fetchAssignedCourses(),
+    enabled: !!user?.id,
+  });
+
+  const { data: progressData } = useQuery({
+    queryKey: ["progress", user?.id],
+    queryFn: () => fetchMyProgress(user!.id),
     enabled: !!user?.id,
   });
 
@@ -88,7 +92,10 @@ export default function CourseDetail() {
     ? `${Math.round((course.durationMinutes / 60) * 10) / 10} ч`
     : "-";
 
-  const progress = assignmentProgress(assignment?.status);
+  const progress = progressData?.courses.find((c) => c.courseId === courseId)?.progressPercentage
+    ?? assignmentProgress(assignment?.status);
+  const isStarted = progress > 0 || assignment?.status === "IN_PROGRESS" || assignment?.status === "COMPLETED";
+  const isCompleted = progress >= 100 || assignment?.status === "COMPLETED";
 
   return (
     <Layout>
@@ -108,9 +115,6 @@ export default function CourseDetail() {
               <Badge variant="outline">{course.difficulty ?? "-"}</Badge>
               <Badge variant="outline">{durationLabel}</Badge>
               <Badge variant="outline">{assignmentLabel(assignment?.status)}</Badge>
-              {(course.specializations ?? []).map((s) => (
-                <Badge key={s} variant="outline">{s}</Badge>
-              ))}
             </div>
             <div className="space-y-2">
               <h1 className="text-3xl font-bold tracking-tight">{course.title}</h1>
@@ -187,10 +191,19 @@ export default function CourseDetail() {
                   ) : (
                     <Button disabled>Ссылка партнера не задана</Button>
                   )}
-                  <Button variant="outline" disabled className="inline-flex items-center gap-2">
-                    <MessageSquare className="h-4 w-4" />
-                    Перейти в чат курса
-                  </Button>
+                  {assignment ? (
+                    <Button asChild variant="outline" className="inline-flex items-center gap-2">
+                      <Link href={`/chat?courseId=${course.id}`}>
+                        <MessageSquare className="h-4 w-4" />
+                        Перейти в чат курса
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" disabled className="inline-flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4" />
+                      Чат доступен после назначения
+                    </Button>
+                  )}
                   <Button variant="outline" disabled className="inline-flex items-center gap-2">
                     <CalendarPlus className="h-4 w-4" />
                     Добавить в календарь
@@ -221,13 +234,13 @@ export default function CourseDetail() {
                     <span>Курс назначен</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {assignment?.status === "IN_PROGRESS" || assignment?.status === "COMPLETED"
+                    {isStarted
                       ? <CircleCheck className="h-4 w-4 text-emerald-600" />
                       : <CircleDot className="h-4 w-4 text-muted-foreground" />}
                     <span>Прохождение начато</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {assignment?.status === "COMPLETED"
+                    {isCompleted
                       ? <CircleCheck className="h-4 w-4 text-emerald-600" />
                       : <CircleDot className="h-4 w-4 text-muted-foreground" />}
                     <span>Курс завершен</span>
@@ -252,14 +265,6 @@ export default function CourseDetail() {
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Длительность</span>
                   <span>{durationLabel}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Формат</span>
-                  <span className="inline-flex items-center gap-1"><CalendarDays className="h-4 w-4" /> Очный поток</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Режим</span>
-                  <span className="inline-flex items-center gap-1"><Clock3 className="h-4 w-4" /> По расписанию</span>
                 </div>
               </CardContent>
             </Card>

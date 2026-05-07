@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Train, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
+import { extractApiErrorMessage } from "@/lib/apiError";
 
 interface Department {
   departmentId: string;
@@ -49,7 +50,6 @@ export default function AuthPage() {
   const [regPositionId, setRegPositionId] = useState("");
   const [regDepartmentId, setRegDepartmentId] = useState("");
   const [regHireDate, setRegHireDate] = useState("");
-  const [regSpecialization, setRegSpecialization] = useState("");
   const authBaseUrl =
     import.meta.env.VITE_AUTH_API_URL ?? "http://localhost:8080/auth";
 
@@ -70,6 +70,11 @@ export default function AuthPage() {
         if (posRes.ok) {
           const posData = await posRes.json();
           setPositions(posData);
+        }
+        if (!deptRes.ok || !posRes.ok) {
+          const deptMsg = !deptRes.ok ? await extractApiErrorMessage(deptRes, "Не удалось загрузить департаменты") : "";
+          const posMsg = !posRes.ok ? await extractApiErrorMessage(posRes, "Не удалось загрузить должности") : "";
+          console.error("Ошибка загрузки данных:", [deptMsg, posMsg].filter(Boolean).join("; "));
         }
       } catch (error) {
         console.error("Ошибка загрузки данных:", error);
@@ -115,7 +120,6 @@ export default function AuthPage() {
         lastName: regLastName,
         positionId: regPositionId || undefined,
         departmentId: regDepartmentId || undefined,
-        specialization: regSpecialization || undefined,
         hireDate: regHireDate || undefined,
       });
       toast({
@@ -264,23 +268,6 @@ export default function AuthPage() {
                       value={regPassword}
                       onChange={(e) => setRegPassword(e.target.value)}
                     />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="specialization">Специализация</Label>
-                    <Select
-                      value={regSpecialization}
-                      onValueChange={setRegSpecialization}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите специализацию" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Software Engineering">Разработка ПО</SelectItem>
-                        <SelectItem value="Project Management">Управление проектами</SelectItem>
-                        <SelectItem value="Data Analytics">Аналитика данных</SelectItem>
-                        <SelectItem value="Information Security">Информационная безопасность</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="department">Департамент</Label>

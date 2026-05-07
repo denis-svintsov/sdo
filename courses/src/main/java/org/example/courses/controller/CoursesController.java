@@ -4,14 +4,13 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.courses.dto.CreateCourseRequest;
 import org.example.courses.dto.CourseDto;
-import org.example.courses.dto.UpdateCourseSpecializationRequest;
 import org.example.courses.dto.UpdateCourseRequest;
 import org.example.courses.model.CourseStatus;
 import org.example.courses.model.DifficultyLevel;
 import org.example.courses.service.AccessControlService;
 import org.example.courses.service.AssignmentService;
 import org.example.courses.service.CourseService;
-import org.example.courses.users.UserAccountRepository;
+import org.example.courses.users.UsersServiceClient;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -28,7 +27,7 @@ public class CoursesController {
 
     private final CourseService courseService;
     private final AccessControlService accessControlService;
-    private final UserAccountRepository userAccountRepository;
+    private final UsersServiceClient usersServiceClient;
     private final AssignmentService assignmentService;
 
     /**
@@ -40,12 +39,12 @@ public class CoursesController {
                                    @RequestParam(required = false) DifficultyLevel difficulty,
                                    @RequestParam(required = false) CourseStatus status,
                                    @RequestParam(required = false) String tagId,
-                                   @RequestParam(required = false) String specialization,
+                                   @RequestParam(required = false) String positionId,
                                    @RequestParam(defaultValue = "0") int page,
                                    @RequestParam(defaultValue = "20") int size,
                                    @RequestHeader(name = "X-User-Id", required = false) String userId) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 100));
-        var pageResult = courseService.catalogDto(q, categoryId, difficulty, status, tagId, specialization, pageable);
+        var pageResult = courseService.catalogDto(q, categoryId, difficulty, status, tagId, positionId, pageable);
 
         if (userId == null || userId.isBlank()) {
             return pageResult;
@@ -61,7 +60,7 @@ public class CoursesController {
     }
 
     /**
-     * Рекомендованные курсы по специальности сотрудника.
+     * Рекомендованные курсы по должности сотрудника.
      */
     @GetMapping("/recommended")
     public Page<CourseDto> recommended(@RequestParam(defaultValue = "0") int page,
@@ -69,11 +68,14 @@ public class CoursesController {
                                        @RequestHeader(name = "X-User-Id", required = false) String userId) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 100));
         if (userId == null || userId.isBlank()) {
-            return courseService.catalogDto(null, null, null, CourseStatus.ACTIVE, null, null, pageable);
+            return new PageImpl<>(List.of(), pageable, 0);
         }
-        var user = userAccountRepository.findById(userId).orElse(null);
-        String specialization = user != null ? user.getSpecialization() : null;
-        var pageResult = courseService.catalogDto(null, null, null, CourseStatus.ACTIVE, null, specialization, pageable);
+        var user = usersServiceClient.getUserContext(userId);
+        String positionId = user != null ? user.positionId() : null;
+        if (positionId == null || positionId.isBlank()) {
+            return new PageImpl<>(List.of(), pageable, 0);
+        }
+        var pageResult = courseService.catalogDto(null, null, null, CourseStatus.ACTIVE, null, positionId, pageable);
         var assignedCourseIds = assignmentService.getAssignedCourses(userId).stream()
                 .map(a -> a.getCourse() != null ? a.getCourse().getId() : null)
                 .filter(id -> id != null && !id.isBlank())
@@ -108,9 +110,4 @@ public class CoursesController {
         return courseService.getDtoById(courseService.update(id, req).getId());
     }
 
-    @PatchMapping("/{id}/specialization")
-    public CourseDto updateSpecialization(@PathVariable String id,
-                                          @Valid @RequestBody UpdateCourseSpecializationRequest req) {
-        return courseService.getDtoById(courseService.updateSpecializations(id, req.specializations()).getId());
-    }
 }
